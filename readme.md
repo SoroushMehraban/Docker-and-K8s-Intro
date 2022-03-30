@@ -59,5 +59,139 @@ In the preceding command:
 - **--rm**: removes the container after the execution.
 - **--env**: Sets the required environment variables which are `weather_url` and `server_port`. Since `server_port` is not set, the python code sets to the default value which is 8080.
 - **-p**: Maps port with the structure `<HOST-PORT>:<CONTAINER-PORT>`. Therefore, it maps the port 8080 of the container to the 80 of the host.
+## Section3: Kubernetes
+First, we create a ConfigMap called `server-config.yaml` with the following format:
+```yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-config
+data:
+  weather_url: "http://api.weatherstack.com/current?access_key=b3324a714ee5cdb9ec8d2bf1d83b824c&query=Tehran"
+  server_port: "8000"
+```
+As we can see, there are two data that are the values from the ENV variables set on our server. To apply the config on our cluster ConfigMaps, we enter the following command:
+```text
+kubectl apply -f server-config.yaml
+```
+We can get the list of config maps using the following command:
+```text
+kubectl get configmaps
+```
 
+Following the creation of the config map, we need to create a deployment to run our pods. So we create it using the following command:
+```text
+kubectl create deployment <deployment-name> --image=<image-name> --dry-run=client -o yaml > server-deployment.yaml
+```
+In the preceding command, ``--dry-run=client`` flag means that we want to get a preview of the object instead of creating
+it in our cluster. Additionally, `-o yaml` means that our output format is `yaml` and we store the content on the
+`server-deployment.yaml` file.
 
+After the modification of the created file, we have the following content:
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: server-deployment
+  name: server-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: server-deployment
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: server-deployment
+    spec:
+      containers:
+      - image: soroushmehraban2022/weather-server:1.0
+        name: weather-server
+        env:
+          - name: server_port
+            valueFrom:
+              configMapKeyRef:
+                name: server-config
+                key: server_port
+          - name: weather_url
+            valueFrom:
+              configMapKeyRef:
+                name: server-config
+                key: weather_url
+        resources: {}
+status: {}
+```
+There are two modifications that are made:
+- **replicas: 2**: this means to create 2 pods.
+- **env**: this sets the env variables of our container. We have to environment variables that we get the values from 
+  the created config map. 
+  
+Next, we apply the created deployment:
+```text
+kubectl apply -f server-deployment.yaml
+```
+
+We can get the status of our pods on our deployment using the following command:
+```text
+kubectl get deployments
+```
+After a while, we should see the following content:
+```text
+NAME                READY   UP-TO-DATE   AVAILABLE   AGE
+server-deployment   2/2     2            2           <START TIME HERE>
+```
+Note that the both pods are ready. So we can get their IP address by entering this command:
+```text
+> kubectl get pods -o wide
+NAME                                 READY   STATUS             RESTARTS   AGE     IP           NODE       NOMINATED NODE   READINESS GATES
+server-deployment-5b8d668949-gf8wv   1/1     Running            0          <TIME>   172.17.0.3   minikube   <none>           <none>
+server-deployment-5b8d668949-rnktd   1/1     Running            0          <TIME>   172.17.0.4   minikube   <none>           <none>
+```
+As we can see, there are two pods with different names. They both start with `server-deployment` which is the deployment
+that manages them. followed by `5b8d668949` which is the deployment tag and then another tag which is unique for each pod.
+
+One of the drawbacks of using pods directly is that their IP Address might change after each restart. Hence, we create a
+server to automatically manages these two pods and distribute the incoming traffic over them.
+
+To create the service, first we create the following content on `server-service.yaml`:
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: server-service
+spec:
+  selector:
+    app: server-deployment
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8000
+```
+- The `selector app` refers to the deployment that is going to manage its pods.
+- `targetPort: 8000` is the container ports that we assigned on the config map.
+- `port: 80` is the port of the service.
+
+After the creation of the service, we apply it using the following command:
+```text
+kubectl apply -f server-service.yaml
+```
+Getting the services:
+```text
+> kubectl get services
+NAME             TYPE        CLUSTER-IP     EXTERNAL-IP   PORT(S)   AGE
+kubernetes       ClusterIP   10.96.0.1      <none>        443/TCP   14h
+server-service   ClusterIP   10.97.53.201   <none>        80/TCP    <TIME>
+```
+
+The relation between the service and the pods:
+```text
+> kubectl get ep
+NAME             ENDPOINTS                         AGE
+kubernetes       192.168.49.2:8443                 14h
+server-service   172.17.0.3:8000,172.17.0.4:8000   <TIME>
+```
+As we can see from the `ep` (endpoints), the server-service is connected to the IP addresses of our deployment's pods.
