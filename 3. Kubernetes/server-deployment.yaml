@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: null
+  labels:
+    app: server-deployment
+  name: server-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: server-deployment
+  strategy: {}
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        app: server-deployment
+    spec:
+      containers:
+      - image: soroushmehraban2022/weather-server:1.0
+        name: weather-server
+        env:
+          - name: server_port
+            valueFrom:
+              configMapKeyRef:
+                name: server-config
+                key: server_port
+          - name: weather_url
+            valueFrom:
+              configMapKeyRef:
+                name: server-config
+                key: weather_url
+        resources: {}
+status: {}

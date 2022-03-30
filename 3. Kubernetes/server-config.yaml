@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-config
+data:
+  weather_url: "http://api.weatherstack.com/current?access_key=b3324a714ee5cdb9ec8d2bf1d83b824c&query=Tehran"
+  server_port: "8000"
