@@ -59,7 +59,7 @@ In the preceding command:
 - **--rm**: removes the container after the execution.
 - **--env**: Sets the required environment variables which are `weather_url` and `server_port`. Since `server_port` is not set, the python code sets to the default value which is 8080.
 - **-p**: Maps port with the structure `<HOST-PORT>:<CONTAINER-PORT>`. Therefore, it maps the port 8080 of the container to the 80 of the host.
-## Section3: Kubernetes
+## Section 3: Kubernetes
 First, we create a ConfigMap called `server-config.yaml` with the following format:
 ```yaml
 apiVersion: v1
@@ -195,3 +195,76 @@ kubernetes       192.168.49.2:8443                 14h
 server-service   172.17.0.3:8000,172.17.0.4:8000   <TIME>
 ```
 As we can see from the `ep` (endpoints), the server-service is connected to the IP addresses of our deployment's pods.
+## Section 4: Testing the system
+Now we want to test the created service. So we create a pod from the image created on section 1 and send an HTTP get request to the service using `curl`.
+
+First, we try creating a new pod called `curl-pod` using the following command:
+```text
+> kubectl run curl-pod --image=soroushmehraban2022/new-alpine:1.0
+pod/curl-pod created
+
+> kubectl get pods
+NAME                                 READY   STATUS             RESTARTS      AGE
+curl-pod                             0/1     CrashLoopBackOff   1 (6s ago)    8s
+server-deployment-5b8d668949-gf8wv   1/1     Running            1 (23m ago)   <TIME>
+server-deployment-5b8d668949-rnktd   1/1     Running            1 (23m ago)   <TIME>
+```
+As we see from the result of the second command, the status of the created pod is `CrashLoopBackOff`. According to the
+[sysdig](https://sysdig.com/blog/debug-kubernetes-crashloopbackoff/), "A CrashloopBackOff means that you have a pod starting, crashing, starting again, and then crashing again." 
+
+As a solution, we can define a deployment to create this pod and execute the `sleep` command in an infinite amount. Like the previous section, we enter the following command:
+
+```text
+kubectl create deployment curl-deployment --image=soroushmehraban2022/new-alpine:1.0 --dry-run=client -o yaml > curl-deployment.yaml
+```
+Then we modify the container part as follows:
+```yaml
+    spec:
+      containers:
+      - image: soroushmehraban2022/new-alpine:1.0
+        name: new-alpine
+        command: ["/bin/sleep"]
+        args: ["infinite"]
+        resources: {}
+```
+Finally, we apply the deployment using the following command:
+```text
+kubectl apply -f curl-deployment.yaml
+```
+
+By entering the following command, we can see the pod is up and running:
+```text
+> kubectl get deployments
+NAME                READY   UP-TO-DATE   AVAILABLE   AGE
+curl-deployment     1/1     1            1           37s
+server-deployment   2/2     2            2           <TIME>
+
+> kubectl get pods
+NAME                                 READY   STATUS    RESTARTS      AGE
+curl-deployment-6f95cf5f47-lrt6c     1/1     Running   0             43s
+server-deployment-5b8d668949-gf8wv   1/1     Running   1 (11m ago)   <TIME>
+server-deployment-5b8d668949-rnktd   1/1     Running   1 (11m ago)   <TIME>
+```
+
+Last but not least, we can execute the pod's ash and send HTTP requests to the `server-service`:
+```text
+> kubectl exec curl-deployment-6f95cf5f47-lrt6c -it -- ash
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-rnktd","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-rnktd","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-rnktd","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-rnktd","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-gf8wv","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-gf8wv","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-rnktd","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # curl server-service
+{"hostname":"server-deployment-5b8d668949-gf8wv","temperature":20,"weather_descriptions":["Partly cloudy"],"wind_speed":11,"humidity":12,"feelslike":20}/ #
+/ # 
+```
+As we can see, the service automatically distributes the request between the pods as the name of the hostname is different between different requests.
